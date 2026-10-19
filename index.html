@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Daily Five</title>
+<style>
+  :root { --bg:#f6f4ef; --card:#fff; --text:#1d1d1b; --muted:#6b6b66; --accent:#2f6fed; --good:#2e9e5b; --bad:#d4493f; --line:#e3e0d8; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#141413; --card:#1f1f1d; --text:#f1efe9; --muted:#9a9890; --accent:#6f9bff; --good:#4cc283; --bad:#ef6b61; --line:#2f2f2c; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; min-height:100vh; display:flex; justify-content:center; align-items:center; padding:16px;
+         background:var(--bg); color:var(--text); font-family:system-ui,-apple-system,"Segoe UI",sans-serif; }
+  main { width:100%; max-width:440px; }
+  header { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:14px; color:var(--muted); font-size:14px; }
+  h1 { margin:0; font-size:20px; color:var(--text); }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:24px; }
+  .tags { display:flex; gap:8px; margin-bottom:16px; font-size:12px; }
+  .tag { padding:3px 10px; border-radius:99px; border:1px solid var(--line); color:var(--muted); }
+  .tag.new { color:var(--accent); border-color:var(--accent); }
+  .tag.review { color:var(--good); border-color:var(--good); }
+  .q { font-size:22px; line-height:1.3; margin:0 0 20px; }
+  .a { font-size:20px; font-weight:600; margin:0 0 20px; color:var(--accent); }
+  .row { display:flex; gap:10px; }
+  button { flex:1; padding:13px; font-size:16px; border-radius:10px; border:0; cursor:pointer; color:#fff; background:var(--accent); }
+  button.good { background:var(--good); } button.bad { background:var(--bad); }
+  .bar { height:6px; background:var(--line); border-radius:99px; margin-bottom:14px; overflow:hidden; }
+  .bar div { height:100%; background:var(--accent); transition:width .3s; }
+  .big { font-size:40px; margin:0 0 8px; }
+  .muted { color:var(--muted); font-size:14px; }
+  a.reset { color:var(--muted); font-size:12px; cursor:pointer; text-decoration:underline; display:block; text-align:center; margin-top:18px; }
+</style>
+</head>
+<body>
+<main>
+  <header><h1>Daily Five</h1><span id="streak"></span></header>
+  <div class="bar"><div id="bar"></div></div>
+  <div class="card" id="view"></div>
+  <a class="reset" id="reset">Reset all progress</a>
+</main>
+
+<script>
+// ---------- Content: add more cards here ----------
+const CARDS = [
+  // History
+  {id:1,  cat:"History", q:"What year did the French Revolution begin?", a:"1789"},
+  {id:2,  cat:"History", q:"What year did the Berlin Wall fall?", a:"1989"},
+  {id:3,  cat:"History", q:"What year did World War II end in Europe?", a:"1945"},
+  {id:4,  cat:"History", q:"What year was Gothenburg founded?", a:"1621 (by Gustav II Adolf)"},
+  {id:5,  cat:"History", q:"What year was the Kalmar Union formed?", a:"1397"},
+  {id:6,  cat:"History", q:"What year did humans first land on the Moon?", a:"1969"},
+  // Capitals
+  {id:7,  cat:"Capitals", q:"Capital of Australia?", a:"Canberra"},
+  {id:8,  cat:"Capitals", q:"Capital of Canada?", a:"Ottawa"},
+  {id:9,  cat:"Capitals", q:"Capital of Brazil?", a:"Brasília"},
+  {id:10, cat:"Capitals", q:"Capital of Turkey?", a:"Ankara"},
+  {id:11, cat:"Capitals", q:"Capital of Switzerland?", a:"Bern"},
+  {id:12, cat:"Capitals", q:"Capital of New Zealand?", a:"Wellington"},
+  {id:13, cat:"Capitals", q:"Capital of Nigeria?", a:"Abuja"},
+  {id:14, cat:"Capitals", q:"Capital of Morocco?", a:"Rabat"},
+  {id:15, cat:"Capitals", q:"Capital of Vietnam?", a:"Hanoi"},
+  // Science
+  {id:16, cat:"Science", q:"Chemical symbol for gold?", a:"Au"},
+  {id:17, cat:"Science", q:"Largest planet in the solar system?", a:"Jupiter"},
+  {id:18, cat:"Science", q:"How many pairs of chromosomes do humans have?", a:"23"},
+  {id:19, cat:"Science", q:"Who published On the Origin of Species, and when?", a:"Charles Darwin, 1859"},
+  {id:20, cat:"Science", q:"Approx. speed of light?", a:"300,000 km/s"},
+  // Sweden
+  {id:21, cat:"Sweden", q:"What year did Sweden join the EU?", a:"1995"},
+  {id:22, cat:"Sweden", q:"Sweden's largest lake?", a:"Vänern"},
+  {id:23, cat:"Sweden", q:"How many seats are in the Riksdag?", a:"349"},
+  {id:24, cat:"Sweden", q:"When was the first Nobel Prize awarded?", a:"1901"},
+  // Culture
+  {id:25, cat:"Culture", q:"Who painted the Mona Lisa?", a:"Leonardo da Vinci"},
+  {id:26, cat:"Culture", q:"Who wrote 1984?", a:"George Orwell"},
+];
+
+// ---------- State (saved in localStorage) ----------
+const KEY = "dailyfive:v1";
+const load = () => { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch { return {}; } };
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch {} };
+const dayStr = (d = new Date()) => d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
+const shuffle = a => a.map(x => [Math.random(), x]).sort((p, q) => p[0] - q[0]).map(x => x[1]);
+
+let state = load();
+state.cards ||= {};   // id -> {box}
+state.days ||= {};    // date -> {set:[{id,type}], idx, score}
+state.streak ||= 0;
+
+const today = dayStr();
+
+function buildToday() {
+  const seen = CARDS.filter(c => state.cards[c.id]);
+  const unseen = CARDS.filter(c => !state.cards[c.id]);
+  // Review: lowest box first (missed cards), random within the same box
+  const review = shuffle(seen).sort((a, b) => state.cards[a.id].box - state.cards[b.id].box).slice(0, 2);
+  const fresh = shuffle(unseen).slice(0, 3);
+  let set = [...fresh.map(c => ({id:c.id, type:"new"})), ...review.map(c => ({id:c.id, type:"review"}))];
+  // Top up to 5 if one pool ran short
+  const used = new Set(set.map(s => s.id));
+  for (const c of shuffle(CARDS)) { if (set.length >= 5) break; if (!used.has(c.id)) { set.push({id:c.id, type: state.cards[c.id] ? "review" : "new"}); used.add(c.id); } }
+  return shuffle(set).sort((a, b) => (a.type === "new" ? 0 : 1) - (b.type === "new" ? 0 : 1));
+}
+
+if (!state.days[today]) { state.days[today] = {set: buildToday(), idx: 0, score: 0}; save(); }
+const day = state.days[today];
+
+// ---------- UI ----------
+const view = document.getElementById("view");
+const bar = document.getElementById("bar");
+let revealed = false;
+
+function render() {
+  document.getElementById("streak").textContent = state.streak ? "🔥 " + state.streak + " day streak" : "";
+  bar.style.width = (day.idx / day.set.length * 100) + "%";
+  if (day.idx >= day.set.length) return renderDone();
+
+  const item = day.set[day.idx];
+  const card = CARDS.find(c => c.id === item.id);
+  view.innerHTML =
+    '<div class="tags"><span class="tag ' + item.type + '">' + (item.type === "new" ? "NEW" : "REVIEW") + '</span>' +
+    '<span class="tag">' + card.cat + '</span><span class="tag">' + (day.idx + 1) + '/' + day.set.length + '</span></div>' +
+    '<p class="q">' + card.q + '</p>' +
+    (revealed
+      ? '<p class="a">' + card.a + '</p><div class="row"><button class="bad" id="miss">Missed it</button><button class="good" id="got">Got it</button></div>'
+      : '<button id="show">Show answer</button>');
+
+  if (revealed) {
+    document.getElementById("got").onclick = () => answer(card, true);
+    document.getElementById("miss").onclick = () => answer(card, false);
+  } else {
+    document.getElementById("show").onclick = () => { revealed = true; render(); };
+  }
+}
+
+function answer(card, correct) {
+  const prev = state.cards[card.id] || {box: 0};
+  state.cards[card.id] = {box: correct ? Math.min(prev.box + 1, 4) : 0};
+  if (correct) day.score++;
+  day.idx++;
+  revealed = false;
+  if (day.idx >= day.set.length) finishDay();
+  save(); render();
+}
+
+function finishDay() {
+  const y = new Date(); y.setDate(y.getDate() - 1);
+  if (state.last === today) return;
+  state.streak = state.last === dayStr(y) ? state.streak + 1 : 1;
+  state.last = today;
+}
+
+function renderDone() {
+  bar.style.width = "100%";
+  const learned = Object.keys(state.cards).length;
+  view.innerHTML =
+    '<p class="big">' + day.score + '/' + day.set.length + '</p>' +
+    '<p class="q">Done for today. 🎉</p>' +
+    '<p class="muted">You have seen ' + learned + ' of ' + CARDS.length + ' cards. Come back tomorrow for 3 new ones and 2 to review.</p>';
+}
+
+document.getElementById("reset").onclick = () => {
+  if (confirm("Delete all progress?")) { try { localStorage.removeItem(KEY); } catch {} location.reload(); }
+};
+
+render();
+</script>
+</body>
+</html>
